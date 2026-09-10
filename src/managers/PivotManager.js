@@ -62,7 +62,7 @@ export class PivotManager {
     for (const row of rows) {
       const gk = groupKeyFn(row);
       const cv = row[this._columnField];
-      const val = Number(row[this._valueField]);
+      const raw = row[this._valueField];
 
       if (!groups.has(gk)) {
         groups.set(gk, new Map());
@@ -73,16 +73,22 @@ export class PivotManager {
 
       const colMap = groups.get(gk);
       if (!colMap.has(cv)) colMap.set(cv, []);
-      if (!Number.isNaN(val)) colMap.get(cv).push(val);
+      // Keep the raw value here — 'count' needs to count non-null entries regardless of
+      // whether they're numeric (e.g. counting text rows), not just the ones that survive
+      // Number() coercion for sum/avg/min/max.
+      if (raw != null) colMap.get(cv).push(raw);
     }
 
     // 4. 집계 함수 적용
-    const agg = (values) => {
+    const agg = (rawValues) => {
+      if (this._aggFunction === 'count') {
+        return rawValues.length;
+      }
+      const values = rawValues.map(Number).filter((v) => !Number.isNaN(v));
       if (values.length === 0) return null;
       switch (this._aggFunction) {
         case 'sum': return values.reduce((a, b) => a + b, 0);
         case 'avg': return values.reduce((a, b) => a + b, 0) / values.length;
-        case 'count': return values.length;
         case 'min': return Math.min(...values);
         case 'max': return Math.max(...values);
         default: return values.reduce((a, b) => a + b, 0);

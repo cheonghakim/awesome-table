@@ -46,17 +46,27 @@ export function useZenithGrid(containerRef, options = {}) {
     const merged = { ...toRaw(options), ...toRaw(overrideOptions) };
     const g = createGrid(containerRef.value, merged);
 
-    g.on('selection-change', (p) => {
-      state.selectedKeys   = p.selectedKeys ?? new Set();
-      state.selectionCount = p.count        ?? 0;
-      state.isAllSelected  = p.isAll        ?? false;
-      state.isSomeSelected = p.isSome       ?? false;
+    g.on('selection-change', () => {
+      // selection-change's own payload doesn't carry allSelected/someSelected (they need
+      // scope-row context only SelectionManager has) — getSelectionState() is authoritative.
+      const sel = g.getSelectionState();
+      state.selectedKeys   = sel.selectedKeys;
+      state.selectionCount = sel.selectedCount;
+      state.isAllSelected  = sel.allSelected;
+      state.isSomeSelected = sel.someSelected;
     });
 
     g.on('render', (p) => {
       state.renderInfo = p;
-      if (p.paginationState) state.paginationState = p.paginationState;
     });
+
+    // 'render' doesn't carry pagination state — refresh it explicitly whenever pagination
+    // actually changes, plus once up front so it isn't stuck at null before the first change.
+    g.on('state-change', ({ type }) => {
+      if (type !== 'pagination') return;
+      state.paginationState = g.getPaginationState();
+    });
+    state.paginationState = g.getPaginationState();
 
     grid.value = g;
     isReady.value = true;

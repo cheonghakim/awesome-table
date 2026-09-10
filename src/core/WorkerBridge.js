@@ -94,7 +94,7 @@ const DataWorkerHandlers = {
     const colEntries = Object.entries(columnFilters);
     if (colEntries.length > 0) {
       result = result.filter((row) => {
-        return colEntries.every(([field, filterDef]) => matchColumnFilter(row, field, filterDef));
+        return colEntries.every(([, filterDef]) => matchColumnFilter(row, filterDef));
       });
     }
 
@@ -155,8 +155,8 @@ function detectType(value) {
   return 'string';
 }
 
-function matchColumnFilter(row, field, filterDef) {
-  const { type = 'text', value, operator = 'contains' } = filterDef;
+function matchColumnFilter(row, filterDef) {
+  const { type = 'text', value, operator = 'contains', field } = filterDef;
   const cellValue = row[field];
   if (cellValue == null) return false;
 

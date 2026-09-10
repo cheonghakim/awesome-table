@@ -1,13 +1,13 @@
 import { RefObject } from 'react';
-import type { GridInstance, GridOptions } from '../../index.js';
+import type { GridCore, GridOptions } from '../../index.js';
 
 export interface UseZenithGridReturn {
   /** Attach to your container div: <div ref={containerRef} /> */
   containerRef: RefObject<HTMLDivElement>;
   /** The raw GridCore instance (null until mounted). */
-  grid: GridInstance | null;
+  grid: GridCore | null;
   /** Stable ref accessor */
-  getGrid: () => GridInstance | null;
+  getGrid: () => GridCore | null;
   /** True after the grid has mounted */
   isReady: boolean;
   /** Reactive selection + render summary */

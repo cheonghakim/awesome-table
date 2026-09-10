@@ -1,5 +1,54 @@
 # Changelog
 
+## [3.0.3] - 2026-09-10
+
+### Fixed
+
+**Tree mode**
+- `tree: {...}` constructor option now actually activates tree mode; previously it silently configured the manager without enabling it, requiring an explicit `enableTree()` call afterward.
+- Tree row keys now respect a configured `rowKey` (field or function) instead of always falling back to `row.id`. Previously, rows without an `id` field could collide onto the same key, so expanding one group could incorrectly expand a sibling group as well; `toggleTreeRow()` also now works correctly when a custom `rowKey` is configured.
+- `parentId` tree mode now links parent/child rows using the configured `rowKey` as well.
+- Lazily-loaded tree children (`onLoadChildren`) now render correctly even when the row's own `children` field started out as `[]` — that value was previously masking the freshly-loaded children.
+- `expandAllTree()` now expands the entire hierarchy in a single call instead of only the currently-visible depth level.
+
+**Editing & Undo/Redo**
+- Editing a formula cell and then undoing the edit no longer permanently destroys the formula.
+- Pasting over a range no longer overwrites cells that are `editable: false` or when editing is disabled entirely.
+- Pasting a multi-column block of tab-separated data now fills every column, not just the first.
+- Confirming a cell edit with Enter no longer pushes duplicate entries onto the undo stack — a single Enter press could previously push up to three, and a single Undo would only revert the last (no-op) one.
+- `setRows()` (a full dataset replacement) now clears undo/redo history, so a stale action from the previous dataset can no longer overwrite unrelated data in the new one.
+- Fixed focus silently dropping to `<body>` after committing a cell edit, which broke grid keyboard shortcuts (like Ctrl+Z) until the user clicked back into the grid.
+- An edit rejected by a column `validator` no longer deletes the cell's existing formula — the formula (and the cell's value) are now left untouched when validation fails, instead of only the value being rolled back while the formula silently disappeared.
+- `setCellValue()` now returns `false` (instead of always reporting success) when the underlying patch is rejected — e.g. an edit to the `rowKey` field that would collide with another row — and no longer pushes a phantom undo entry for an edit that never actually applied.
+
+**Filtering & Pagination**
+- Advanced filters (`setAdvancedFilter`) are now applied before pagination, so `totalCount` and page count reflect the filtered result instead of the full, unfiltered dataset.
+- Advanced filters now evaluate every row independently in group and tree mode (including nested tree descendants), instead of only the top-level rows — a matching child of a non-matching parent is no longer dropped along with it, and a `parentId`-mode child is no longer promoted to a fake root when its parent is filtered out.
+- Sorting or filtering with a Web Worker enabled no longer silently ignores custom `comparator`/filter functions — those operations now run on the main thread instead of producing a different, incorrect result with no warning.
+- Web Worker filtering now reads the correct data field when a column's `id` differs from its `field`.
+
+**Grouping & Pivot**
+- Group aggregates now sum every row in the group instead of only the rows on the currently displayed page.
+- `disablePivot()` now restores the grid's original columns instead of leaving the pivot-generated ones in place, and now correctly invalidates cached row heights and re-saves column state, matching every other column-changing API.
+- Pivot `count` aggregation now counts non-numeric values (e.g. text) correctly instead of returning `null`. As part of this fix, `sum`/`avg`/`min`/`max` now exclude `null`/`undefined` value-field cells from the calculation entirely, rather than silently coercing them to `0` (this mainly changes `avg`, whose denominator no longer counts blank cells — matching typical spreadsheet `AVERAGE` semantics).
+
+**Data & Export**
+- `DataStore.patchRow()` now keeps its key index in sync when a patch changes the value of the configured `rowKey` field itself, and refuses the change outright (returning `false`) if it would collide with another row's existing key instead of silently merging the two rows' identities.
+- Expanded Master-Detail rows are no longer exported as blank rows in CSV/Excel export.
+
+**Side panel**
+- The built-in side panel (columns/filters/view) no longer overlaps and clips the grid's rightmost columns when it's open.
+- Keyboard focus on the row-selection checkbox is now also preserved across a re-render (the earlier focus-preservation fix only covered data cells).
+
+**Framework adapters**
+- The React and Vue 3 hooks' `selectionCount`, `isAllSelected`, `isSomeSelected`, and `paginationState` now actually update — they previously read fields that didn't exist on the emitted events and stayed stuck at their initial values.
+
+**Packaging & TypeScript types**
+- The published React, Vue 2, and Vue 3 type declaration files no longer import from a path outside the package.
+- Removed a reference to the nonexistent `GridInstance` type (now `GridCore`) and the nonexistent `useZenithGridReact` export from the type declarations; added the missing `createFormulaPlugin` declaration.
+- Fixed a duplicate `onRowContextMenu` property and a non-generic `GridPlugin` type misuse in the Vue 3 declarations.
+- `createEchartsPlugin` can now actually be imported from the published package, via `zenith-grid/plugins/echarts`, with its own type declarations.
+
 ## [3.0.0] - 2026-07-14
 
 ### ⚠️ BREAKING CHANGES

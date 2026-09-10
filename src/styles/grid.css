@@ -47,6 +47,20 @@
     var(--ck-zenith-grid-side-panel-rail-width) +
       var(--ck-zenith-grid-side-panel-edge-gap)
   );
+  transition: margin-right 180ms ease;
+}
+
+/* When the side panel card is open, reserve its width too so it doesn't
+   overlay (and clip) the rightmost grid columns. */
+.ck-zenith-grid-root.ck-zenith-grid-side-panel-open .ck-zenith-grid-header,
+.ck-zenith-grid-root.ck-zenith-grid-side-panel-open .ck-zenith-grid-body-viewport,
+.ck-zenith-grid-root.ck-zenith-grid-side-panel-open .ck-zenith-grid-footer,
+.ck-zenith-grid-root.ck-zenith-grid-side-panel-open .ck-zenith-grid-live-banner {
+  margin-right: calc(
+    var(--ck-zenith-grid-side-panel-card-width) +
+      var(--ck-zenith-grid-side-panel-rail-width) +
+      var(--ck-zenith-grid-side-panel-edge-gap)
+  );
 }
 
 .ck-zenith-grid-side-panel-host {
@@ -183,6 +197,20 @@
 
   .ck-zenith-grid-side-panel-card {
     width: min(var(--ck-zenith-grid-side-panel-card-width), calc(100vw - 72px));
+  }
+
+  .ck-zenith-grid-root.ck-zenith-grid-side-panel-open .ck-zenith-grid-header,
+  .ck-zenith-grid-root.ck-zenith-grid-side-panel-open .ck-zenith-grid-body-viewport,
+  .ck-zenith-grid-root.ck-zenith-grid-side-panel-open .ck-zenith-grid-footer,
+  .ck-zenith-grid-root.ck-zenith-grid-side-panel-open .ck-zenith-grid-live-banner {
+    margin-right: min(
+      calc(
+        var(--ck-zenith-grid-side-panel-card-width) +
+          var(--ck-zenith-grid-side-panel-rail-width) +
+          var(--ck-zenith-grid-side-panel-edge-gap)
+      ),
+      calc(100% - 40px)
+    );
   }
 }
 
@@ -1310,6 +1338,11 @@
   cursor: default;
 }
 
+.ck-zenith-grid-row-toggle-spacer-visible {
+  border-color: var(--ck-zenith-grid-border);
+  background: linear-gradient(180deg, #ffffff, #f7f9fc);
+}
+
 .ck-zenith-grid-group-cell {
   font-weight: 600;
 }
@@ -2298,7 +2331,8 @@
 
 .ck-zenith-grid-theme-dark .ck-zenith-grid-live-banner-button,
 .ck-zenith-grid-theme-dark .ck-zenith-grid-footer-button,
-.ck-zenith-grid-theme-dark .ck-zenith-grid-row-toggle {
+.ck-zenith-grid-theme-dark .ck-zenith-grid-row-toggle:not(.ck-zenith-grid-row-toggle-spacer),
+.ck-zenith-grid-theme-dark .ck-zenith-grid-row-toggle-spacer-visible {
   background: linear-gradient(180deg, #1e2d3e, #182536);
   border-color: var(--ck-zenith-grid-border, #2d3a47);
   color: var(--ck-zenith-grid-ink, #e8edf3);

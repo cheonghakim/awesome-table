@@ -238,6 +238,8 @@ export interface TreeOptions<Row = GridRow> {
   parentIdField?: string;
   hasChildrenField?: string;
   onLoadChildren?: ((row: Row) => Promise<Row[]> | Row[]) | null;
+  /** Show a visible placeholder box next to leaf rows (rows with no children). Defaults to false (hidden). */
+  showLeafSpacer?: boolean;
 }
 
 export interface SidePanelOptions {
@@ -326,7 +328,6 @@ export interface GridOptions<Row = GridRow> {
   statusBar?: { enabled?: boolean };
   worker?: { enabled?: boolean; url?: string; timeout?: number };
   onSelectionChange?: ((payload: any) => void) | null;
-  onRowContextMenu?: ((payload: RowContextMenuPayload<Row>) => void) | null;
 }
 
 export interface GridFilterChoice {
@@ -359,6 +360,8 @@ export declare class GridCore<Row = GridRow> {
   toggleTreeRow(rowKey: GridKey): void;
   expandAllTree(): void;
   collapseAllTree(): void;
+  isTreeLeafSpacerVisible(): boolean;
+  setTreeLeafSpacerVisible(visible: boolean): void;
   sortBy(defs: any[]): void;
   clearSort(): void;
   toggleSelectAll(): void;
@@ -529,15 +532,7 @@ export declare function createContextMenuPlugin<Row = GridRow>(options?: Context
 export declare function createCsvShortcutPlugin(options?: CsvShortcutPluginOptions): GridPlugin;
 export declare function createXlsxExportPlugin(options?: { name?: string; fileName?: string }): GridPlugin;
 export declare function createSparklinePlugin(options?: { name?: string }): GridPlugin;
-export declare function useZenithGridReact(options?: GridOptions): {
-  containerRef: { current: HTMLElement | null };
-  grid: GridCore | null;
-  getGrid: () => GridCore | null;
-  isReady: boolean;
-  state: { selectedKeys: Set<string>; selectionCount: number; isAllSelected: boolean; isSomeSelected: boolean; renderInfo: any; paginationState: any };
-  refresh: (...args: any[]) => any;
-  setRows: (...args: any[]) => any;
-  setColumns: (...args: any[]) => any;
-  setQuickFilter: (...args: any[]) => any;
-  on: (...args: any[]) => any;
-};
+export declare function createFormulaPlugin(options?: { name?: string }): GridPlugin;
+// The React hook (useZenithGrid) is only ever exported from the 'zenith-grid/react'
+// subpath entry point (see src/adapters/react/index.d.ts) — there is no root-level
+// React export at runtime, so it must not be declared here.

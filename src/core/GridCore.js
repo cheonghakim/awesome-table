@@ -70,6 +70,11 @@ export class GridCore {
     );
 
     this._columns = new ColumnRegistry(options.columns ?? [], options.columnState ?? {});
+    // Pivot mode overwrites this._columns with dynamically-generated pivot columns
+    // (refresh()'s pivot block, below) via a direct ColumnRegistry call that bypasses
+    // the public setColumns() wrapper — so this snapshot only tracks genuine user column
+    // sets and lets disablePivot() restore the pre-pivot columns.
+    this._preservedColumnDefs = options.columns ?? [];
     this._columnStateManager = options.tableId
       ? new ColumnStateManager(options.tableId, options.columnStatePersistence ?? {})
       : null;
@@ -120,11 +125,16 @@ export class GridCore {
 
     this._treeManager = new TreeManager({
       ...(options.tree ?? {}),
+      getRowKey: this._getRowKey,
       onChanged: () => {
         this._emitStateChanged('tree');
         this._refreshFlatten();
       },
     });
+    if (options.tree) {
+      this._treeManager.enable();
+    }
+    this._treeLeafSpacerVisible = Boolean(options.tree?.showLeafSpacer);
 
     this._paginationManager = new PaginationManager({
       ...(options.pagination ?? {}),
@@ -254,6 +264,7 @@ export class GridCore {
         void this.refresh();
       },
     });
+    this._pipeline.setAdvancedFilterManager(this._advancedFilterManager);
 
     this._pivotManager = new PivotManager({
       onChanged: () => {
@@ -444,6 +455,7 @@ export class GridCore {
         onRowDragStart: ({ rowKey }) => this._rowDragManager.handleDragStart(rowKey),
         onRowDragEnd: () => this._rowDragManager.handleDragEnd(),
         getRangeSelectionManager: () => this._rangeSelectionManager,
+        isTreeLeafSpacerVisible: () => this._treeLeafSpacerVisible,
         getAllLeafColumnDefs: () => this._columns.getVisibleLeafColumns().map((c) => c.def),
         isMasterDetailEnabled: this._masterDetailRenderer
           ? () => !this._pivotManager.isEnabled()
@@ -482,6 +494,9 @@ export class GridCore {
       this._dom.getHeaderCenterViewport()
     );
 
+    // NOTE: DataStore gets the raw `options.rowKey`, not `this._getRowKey` below — if it's a
+    // function, DataStore.getRowKey() calls it as (row) while Pipeline/TreeManager call the
+    // same function as (row, index). See the note in DataStore.getRowKey().
     this._dataStore = new DataStore({
       rowKey: options.rowKey ?? 'id',
       onChanged: () => {
@@ -561,15 +576,8 @@ export class GridCore {
     }
     if (this._destroyed || version !== this._renderVersion) return;
 
-    // 고급 필터 적용
-    if (this._advancedFilterManager.hasFilter()) {
-      result.displayRows = result.displayRows.filter((row) =>
-        row._type === 'group-header' || row._type === 'tree-loading' || this._advancedFilterManager.evaluate(row)
-      );
-      result.flatRows = result.flatRows.filter((row) =>
-        row._type === 'group-header' || row._type === 'tree-loading' || this._advancedFilterManager.evaluate(row)
-      );
-    }
+    // 고급 필터는 Pipeline.process() 안에서 페이지 분할 이전에 이미 적용됐다
+    // (totalCount/페이지 상태가 필터링된 개수를 기준으로 계산되도록).
 
     // Pivot 모드
     if (this._pivotManager.isEnabled()) {
@@ -588,14 +596,18 @@ export class GridCore {
     const hasAnyAggregate = this._aggregateManager.hasAny()
       || allLeafCols.some((def) => def.aggregate != null);
     if (hasAnyAggregate) {
-      for (let i = 0; i < result.displayRows.length; i++) {
-        const row = result.displayRows[i];
+      // flatRows (전체, 페이지 분할 이전) 기준으로 순회해야 한다 — displayRows는 현재
+      // 페이지로 잘린 슬라이스라, 그 안에서만 인접 leaf 행을 찾으면 그룹이 여러 페이지에
+      // 걸쳐 있을 때 합계가 현재 페이지 몫만 반영된다. group-header row 객체는 flatRows와
+      // displayRows가 같은 참조를 공유하므로 여기서 채운 _aggregates가 그대로 화면에 반영된다.
+      for (let i = 0; i < result.flatRows.length; i++) {
+        const row = result.flatRows[i];
         if (row._type !== 'group-header') continue;
         const groupDepth = row._groupDepth ?? 0;
         // 직계 leaf 행 + 하위 그룹의 leaf 행 모두 수집
         const leafChildren = [];
-        for (let j = i + 1; j < result.displayRows.length; j++) {
-          const next = result.displayRows[j];
+        for (let j = i + 1; j < result.flatRows.length; j++) {
+          const next = result.flatRows[j];
           if (next._type === 'group-header' && (next._groupDepth ?? 0) <= groupDepth) break;
           if (next._type !== 'group-header' && next._type !== 'tree-loading' && next._type !== 'detail') {
             leafChildren.push(next);
@@ -699,6 +711,10 @@ export class GridCore {
 
   setRows(rows) {
     this._invalidateMeasuredRows();
+    // A full dataset replacement invalidates undo/redo history: it's keyed by rowKey
+    // only, so a stale action from the previous dataset could silently apply onto an
+    // unrelated row that happens to reuse the same key in the new dataset.
+    this._undoRedoManager.clear();
     const normalizedRows = Array.isArray(rows) ? rows : [];
     for (const row of normalizedRows) {
       if (row._formulas) delete row._formulas;
@@ -759,23 +775,44 @@ export class GridCore {
 
   patchRow(key, patch) {
     const existing = this._dataStore.getByKey(key);
-    if (existing) {
-      const formulas = { ...(existing._formulas || {}) };
-      for (const [field, val] of Object.entries(patch)) {
-        if (field.startsWith('_')) continue;
-        if (typeof val === 'string' && val.startsWith('=')) {
-          formulas[field] = val;
-        } else {
-          delete formulas[field];
-        }
+    if (!existing) {
+      return this._dataStore.patchRow(key, patch);
+    }
+
+    // `_formulas` must be updated on `existing` BEFORE calling DataStore.patchRow: that
+    // call's onChanged synchronously triggers refresh() -> FormulaManager.evaluateAll(),
+    // which only recomputes fields listed in `_formulas` at that exact moment. Setting it
+    // afterward would miss that pass and leave the raw formula string in the cell instead
+    // of its computed value.
+    const previousFormulas = existing._formulas;
+    const formulas = { ...(previousFormulas || {}) };
+    for (const [field, val] of Object.entries(patch)) {
+      if (field.startsWith('_')) continue;
+      if (typeof val === 'string' && val.startsWith('=')) {
+        formulas[field] = val;
+      } else {
+        delete formulas[field];
       }
-      if (Object.keys(formulas).length > 0) {
-        existing._formulas = formulas;
+    }
+    if (Object.keys(formulas).length > 0) {
+      existing._formulas = formulas;
+    } else {
+      delete existing._formulas;
+    }
+
+    const succeeded = this._dataStore.patchRow(key, patch);
+    if (!succeeded) {
+      // The underlying patch was rejected (e.g. it would rename this row onto another
+      // row's rowKey) — this row's data never changed, so undo the bookkeeping mutation
+      // above rather than leaving it corrupted.
+      if (previousFormulas) {
+        existing._formulas = previousFormulas;
       } else {
         delete existing._formulas;
       }
+      return false;
     }
-    this._dataStore.patchRow(key, patch);
+    return true;
   }
 
   upsertRows(rows) {
@@ -819,6 +856,7 @@ export class GridCore {
   }
 
   setColumns(columns) {
+    this._preservedColumnDefs = columns;
     this._columns.setColumns(columns, true);
     this._headerModel.rebuild();
     this._invalidateMeasuredRows();
@@ -895,11 +933,20 @@ export class GridCore {
   }
 
   expandAllTree() {
-    this._treeManager.expandAll(this._flatRows);
+    this._treeManager.expandAll(this._pipeline.getLastBaseRows());
   }
 
   collapseAllTree() {
     this._treeManager.collapseAll();
+  }
+
+  isTreeLeafSpacerVisible() {
+    return this._treeLeafSpacerVisible;
+  }
+
+  setTreeLeafSpacerVisible(visible) {
+    this._treeLeafSpacerVisible = Boolean(visible);
+    void this.refresh();
   }
 
   sortBy(defs) {
@@ -1010,7 +1057,7 @@ export class GridCore {
       event.preventDefault();
       const { start } = this._rangeSelectionManager.getState();
       if (start) {
-        this.pasteFromClipboard(text, { startRowKey: start.rowKey, columns: [start.colId] });
+        this.pasteFromClipboard(text, { startRowKey: start.rowKey, startColId: start.colId });
       }
     }
   }
@@ -1019,9 +1066,12 @@ export class GridCore {
     const row = this._dataStore.getByKey(rowKey);
     const column = this._columns.getDef(colId);
     if (!row || !column) return;
-    const parsed = this._parseCellValue(value, row, column);
+    const isFormula = typeof value === 'string' && value.startsWith('=');
+    const parsed = isFormula ? value : this._parseCellValue(value, row, column);
+    // this.patchRow (not _dataStore.patchRow) so `_formulas` bookkeeping stays in
+    // sync when undo/redo restores a formula string.
     // patchRow → DataStore.onChanged → refresh() 자동 호출
-    this._dataStore.patchRow(rowKey, { [column.field]: parsed });
+    this.patchRow(rowKey, { [column.field]: parsed });
     this._events.emit('cell-value-change', { rowKey, colId, field: column.field, value: parsed, row });
   }
 
@@ -1044,6 +1094,11 @@ export class GridCore {
 
   disablePivot() {
     this._pivotManager.disable();
+    this._columns.setColumns(this._preservedColumnDefs, false);
+    this._headerModel.rebuild();
+    this._invalidateMeasuredRows();
+    this._syncColumnWidths();
+    void this.saveColumnState();
     void this.refresh();
   }
 
@@ -1384,14 +1439,20 @@ export class GridCore {
     const previous = row._formulas?.[column.field] ?? row[column.field];
     const editor = this._createCellEditor(row, column, previous);
     cell.classList.add('ck-zenith-grid-cell-editing');
+    delete cell.dataset.committed;
     cell.innerHTML = '';
     cell.appendChild(editor);
     editor.focus();
     editor.select?.();
 
+    // Enter/Tab also commit via the bubbled keydown reaching _handleKeydown ->
+    // commitCellEdit(), and a Tab/Enter-driven focus change fires this editor's own
+    // blur handler too — without this shared per-cell flag, a single confirm can push
+    // 2-3 duplicate entries onto the undo stack for one edit.
     const finish = (commit) => {
-      if (!cell.isConnected) return;
+      if (!cell.isConnected || cell.dataset.committed === 'true') return;
       if (commit) {
+        cell.dataset.committed = 'true';
         this.setCellValue(rowKey, colId, editor.value);
       } else {
         void this.refresh();
@@ -1460,7 +1521,8 @@ export class GridCore {
 
   commitCellEdit(rowKey, colId, value) {
     const editing = this._container.querySelector('.ck-zenith-grid-cell-editing');
-    if (!editing) return;
+    if (!editing || editing.dataset.committed === 'true') return;
+    editing.dataset.committed = 'true';
     editing.classList.remove('ck-zenith-grid-cell-editing');
     this.setCellValue(rowKey, colId, value);
   }
@@ -1479,18 +1541,10 @@ export class GridCore {
     }
 
     const field = column.field;
+    // What undo should restore: the formula string if this cell was formula-driven
+    // before this edit, otherwise its current plain value.
+    const restoreValue = row._formulas?.[field] ?? row[field];
     const isFormula = typeof rawValue === 'string' && rawValue.startsWith('=');
-    if (isFormula) {
-      row._formulas = row._formulas || {};
-      row._formulas[field] = rawValue;
-    } else {
-      if (row._formulas) {
-        delete row._formulas[field];
-        if (Object.keys(row._formulas).length === 0) {
-          delete row._formulas;
-        }
-      }
-    }
 
     const value = isFormula ? rawValue : this._parseCellValue(rawValue, row, column);
     const error = isFormula ? null : this._validateCellValue(value, row, column);
@@ -1504,8 +1558,14 @@ export class GridCore {
 
     this._validationErrors.delete(errorKey);
     const previousValue = row[field];
-    this._undoRedoManager.push({ rowKey: String(rowKey), colId, oldValue: previousValue, newValue: value });
-    this.patchRow(rowKey, { [field]: value });
+    // patchRow() owns `_formulas` bookkeeping based on the patched value itself (a string
+    // starting with '=' records a formula, anything else clears one), and it can reject the
+    // patch outright (e.g. a rowKey collision) — so `_formulas` must not be touched here
+    // directly, and undo history should only be recorded once the edit actually applied.
+    const succeeded = this.patchRow(rowKey, { [field]: value });
+    if (!succeeded) return false;
+
+    this._undoRedoManager.push({ rowKey: String(rowKey), colId, oldValue: restoreValue, newValue: value });
     this._events.emit('cell-value-change', {
       rowKey: String(rowKey),
       colId,
@@ -1676,7 +1736,7 @@ export class GridCore {
       return 0;
     }
 
-    const columns = this._resolveCsvColumns({ columns: options.columns });
+    const columns = this._resolvePasteColumns(options, rows);
     const targetRows = this._resolvePasteTargetRows(options);
     let changed = 0;
 
@@ -1687,6 +1747,7 @@ export class GridCore {
       values.forEach((value, colOffset) => {
         const column = columns[colOffset];
         if (!column) return;
+        if (!this._isCellEditable(row, column.def)) return;
         if (this.setCellValue(rowKey, column.def.id, value)) {
           changed += 1;
         }
@@ -1694,6 +1755,20 @@ export class GridCore {
     });
 
     return changed;
+  }
+
+  // 명시적 columns 목록이 주어지면 그대로 사용하고(export/programmatic 용도와 동일 계약 유지),
+  // 아니면 startColId부터 붙여넣을 데이터의 최대 열 수만큼 화면에 보이는 컬럼을 순서대로 잡는다.
+  _resolvePasteColumns(options, rows) {
+    if (Array.isArray(options.columns) && options.columns.length > 0) {
+      return this._resolveCsvColumns({ columns: options.columns });
+    }
+    const visible = this._columns.getVisibleLeafColumns();
+    const startIndex = options.startColId
+      ? Math.max(0, visible.findIndex((column) => column.def.id === options.startColId))
+      : 0;
+    const maxCols = rows.reduce((max, values) => Math.max(max, values.length), 1);
+    return visible.slice(startIndex, startIndex + maxCols);
   }
 
   async benchmarkLiveUpdates(options = {}) {
@@ -2844,7 +2919,7 @@ export class GridCore {
   }
 
   _isExportableRow(row) {
-    return row && row._type !== 'group-header' && row._type !== 'tree-loading';
+    return row && row._type !== 'group-header' && row._type !== 'tree-loading' && row._type !== 'detail';
   }
 
   _parseDelimitedRows(text, delimiter) {

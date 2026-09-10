@@ -6,6 +6,7 @@ export class TreeManager {
     this._hasChildrenField = options.hasChildrenField ?? 'hasChildren';
     this._onLoadChildren = options.onLoadChildren ?? null;
     this._onChanged = options.onChanged ?? (() => {});
+    this._getRowKey = options.getRowKey ?? ((row, index) => String(row.id ?? index));
     this._enabled = false;
 
     this._expandedKeys = new Set();
@@ -46,13 +47,31 @@ export class TreeManager {
     }
   }
 
-  expandAll(flatRows) {
-    for (const row of flatRows) {
-      if (row._hasChildren) {
-        this._expandedKeys.add(row._rowKey);
+  // `rows` must be the RAW source rows (same shape passed to flatten()), not an
+  // already-flattened list — a flattened list only contains rows under currently-expanded
+  // ancestors, so collapsed branches would never get visited and expandAll() would need to
+  // be called once per depth level to fully open a deep tree.
+  expandAll(rows) {
+    const roots = this._treeMode === 'parentId' ? this._buildTreeFromParentId(rows) : rows;
+    this._collectAllParentKeys(roots, null);
+    this._onChanged({ action: 'expandAll' });
+  }
+
+  _collectAllParentKeys(rows, parentKey) {
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const key = this._getKey(row, parentKey != null ? `${parentKey}::${i}` : i);
+      const rawChildren = this._treeMode === 'parentId'
+        ? (row._treeChildren ?? [])
+        : (this._childrenCache.get(key) ?? row[this._childrenField] ?? []);
+      const hasChildren = rawChildren.length > 0 || row[this._hasChildrenField] === true;
+      if (hasChildren) {
+        this._expandedKeys.add(key);
+        if (rawChildren.length > 0) {
+          this._collectAllParentKeys(rawChildren, key);
+        }
       }
     }
-    this._onChanged({ action: 'expandAll' });
   }
 
   collapseAll() {
@@ -91,7 +110,7 @@ export class TreeManager {
 
   flatten(rows) {
     if (!this._enabled) {
-      return rows.map((row, index) => this._toFlatRow(row, null, 0, index));
+      return rows.map((row, index) => this._toFlatRow(row, this._getKey(row, index), null, 0, index));
     }
 
     if (this._treeMode === 'parentId') {
@@ -109,13 +128,13 @@ export class TreeManager {
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
-      const key = String(row.id ?? i);
+      const key = String(this._getRowKey(row, i));
       rowMap.set(key, { ...row, _treeKey: key, _treeChildren: [] });
     }
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
-      const key = String(row.id ?? i);
+      const key = String(this._getRowKey(row, i));
       const parentId = row[this._parentIdField];
       const current = rowMap.get(key);
       if (parentId != null) {
@@ -136,23 +155,30 @@ export class TreeManager {
   _flattenTree(rows, parentKey, depth) {
     const flat = [];
 
-    for (const row of rows) {
-      const key = this._getKey(row);
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      // Scope the fallback index to this branch (parentKey::i) so that rows with no
+      // natural id/rowKey don't collide with same-position siblings under a different parent.
+      const key = this._getKey(row, parentKey != null ? `${parentKey}::${i}` : i);
+      // Cache wins over the row's own children field: it's only ever populated by
+      // loadChildren() with freshly-loaded data, and a lazy node's original row commonly
+      // carries `children: []` (a defined empty array, so `??` alone would never fall
+      // through to the cache).
       const rawChildren = this._treeMode === 'parentId'
         ? (row._treeChildren ?? [])
-        : (row[this._childrenField] ?? this._childrenCache.get(key) ?? []);
+        : (this._childrenCache.get(key) ?? row[this._childrenField] ?? []);
 
       const hasChildren = rawChildren.length > 0 || row[this._hasChildrenField] === true;
       const isExpanded = this._expandedKeys.has(key);
       const isLoading = this._loadingKeys.has(key);
 
-      const flatRow = this._toFlatRow(row, parentKey, depth, flat.length);
+      const flatRow = this._toFlatRow(row, key, parentKey, depth, flat.length);
       flatRow._hasChildren = hasChildren;
       flatRow._isExpanded = isExpanded;
       flatRow._isLoading = isLoading;
       flatRow._isParent = hasChildren;
       flatRow._children = rawChildren;
-      flatRow._descendantRowKeys = this._collectDescendantRowKeys(rawChildren);
+      flatRow._descendantRowKeys = this._collectDescendantRowKeys(rawChildren, key);
       flat.push(flatRow);
 
       if (isExpanded && rawChildren.length > 0) {
@@ -182,15 +208,16 @@ export class TreeManager {
 
   _flattenTreeAllForExport(rows, parentKey, depth) {
     const flat = [];
-    for (const row of rows) {
-      const key = this._getKey(row);
-      const rawChildren = row[this._childrenField] ?? this._childrenCache.get(key) ?? [];
-      const flatRow = this._toFlatRow(row, parentKey, depth, flat.length);
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const key = this._getKey(row, parentKey != null ? `${parentKey}::${i}` : i);
+      const rawChildren = this._childrenCache.get(key) ?? row[this._childrenField] ?? [];
+      const flatRow = this._toFlatRow(row, key, parentKey, depth, flat.length);
       flatRow._hasChildren = rawChildren.length > 0 || row[this._hasChildrenField] === true;
       flatRow._isExpanded = this._expandedKeys.has(key);
       flatRow._isParent = flatRow._hasChildren;
       flatRow._children = rawChildren;
-      flatRow._descendantRowKeys = this._collectDescendantRowKeys(rawChildren);
+      flatRow._descendantRowKeys = this._collectDescendantRowKeys(rawChildren, key);
       flat.push(flatRow);
       if (rawChildren.length > 0) {
         flat.push(...this._flattenTreeAllForExport(rawChildren, key, depth + 1));
@@ -199,11 +226,11 @@ export class TreeManager {
     return flat;
   }
 
-  _toFlatRow(row, parentKey, depth, flatIndex) {
+  _toFlatRow(row, key, parentKey, depth, flatIndex) {
     return {
       _type: 'tree-node',
       _flatIndex: flatIndex,
-      _rowKey: this._getKey(row),
+      _rowKey: key,
       _parentKey: parentKey,
       _depth: depth,
       _hasChildren: false,
@@ -215,26 +242,27 @@ export class TreeManager {
     };
   }
 
-  _collectDescendantRowKeys(rows) {
+  _collectDescendantRowKeys(rows, basePath = null) {
     const keys = [];
-    const visit = (items) => {
-      for (const item of items ?? []) {
-        const key = this._getKey(item);
+    const visit = (items, path) => {
+      for (let i = 0; i < (items ?? []).length; i++) {
+        const item = items[i];
+        const key = this._getKey(item, path != null ? `${path}::${i}` : i);
         keys.push(key);
         const children = this._treeMode === 'parentId'
           ? (item._treeChildren ?? [])
-          : (item[this._childrenField] ?? this._childrenCache.get(key) ?? []);
+          : (this._childrenCache.get(key) ?? item[this._childrenField] ?? []);
         if (children.length > 0) {
-          visit(children);
+          visit(children, key);
         }
       }
     };
-    visit(rows);
+    visit(rows, basePath);
     return keys;
   }
 
-  _getKey(row) {
-    return String(row._treeKey ?? row.id ?? '');
+  _getKey(row, index) {
+    return String(row._treeKey ?? this._getRowKey(row, index));
   }
 
   serializeState() {

@@ -173,11 +173,12 @@ const grid = createGrid(document.getElementById('grid'), {
   ],
   rows: myRows,
   rowKey: 'id',
-  // 초기 정렬 지정 (선택)
-  defaultSort: [{ field: 'score', direction: 'desc' }],
-});`,
+});
+
+// 초기 정렬 지정 (선택) - 생성 옵션이 아니라 API 호출로 적용합니다.
+grid.sortBy({ field: 'score', direction: 'desc' });`,
     setup(el) {
-      return createGrid(el, {
+      const grid = createGrid(el, {
         columns: [
           { id: 'id',     field: 'id',     header: 'ID',     width: 80,  type: 'number' },
           { id: 'name',   field: 'name',   header: 'Name',   flex: 1 },
@@ -186,8 +187,9 @@ const grid = createGrid(document.getElementById('grid'), {
         ],
         rows: makeRows(200),
         rowKey: 'id',
-        defaultSort: [{ field: 'score', direction: 'desc' }],
       });
+      grid.sortBy({ field: 'score', direction: 'desc' });
+      return grid;
     },
   },
 
@@ -424,7 +426,7 @@ const grid = createGrid(el, {
   rowKey: 'id',
   tree: {
     treeMode: 'children',
-    childrenField: 'hasChildren',
+    childrenField: 'children',
     hasChildrenField: 'hasChildren',
     // 지연 로딩
     onLoadChildren: async (row) => {
@@ -531,6 +533,8 @@ const grid = createGrid(el, {
   columns: [...],
   rows: myRows,  // 전체 데이터를 한 번에 전달
   rowKey: 'id',
+  // displayMode를 지정해야 pagination 옵션이 실제로 적용됩니다.
+  displayMode: 'paginated',
   pagination: {
     mode: 'client',
     pageSize: 20,
@@ -540,7 +544,7 @@ const grid = createGrid(el, {
 // 페이지 이동
 grid.nextPage();
 grid.prevPage();
-grid.goToPage(3);`,
+grid.setPage(3);`,
     setup(el) {
       return createGrid(el, {
         columns: [
@@ -551,6 +555,7 @@ grid.goToPage(3);`,
         ],
         rows: makeRows(300),
         rowKey: 'id',
+        displayMode: 'paginated',
         pagination: { mode: 'client', pageSize: 20 },
       });
     },
@@ -564,6 +569,8 @@ grid.goToPage(3);`,
     code: `const grid = createGrid(el, {
   columns: [...],
   rowKey: 'id',
+  // displayMode를 지정해야 초기 fetchPage 호출이 실행됩니다.
+  displayMode: 'paginated',
   pagination: {
     mode: 'server',
     pageSize: 25,
@@ -587,6 +594,7 @@ grid.goToPage(3);`,
           { id: 'score', field: 'score', header: 'Score', width: 100, type: 'number' },
         ],
         rowKey: 'id',
+        displayMode: 'paginated',
         pagination: {
           mode: 'server',
           pageSize: 25,
@@ -608,6 +616,8 @@ grid.goToPage(3);`,
     code: `const grid = createGrid(el, {
   columns: [...],
   rowKey: 'id',
+  // displayMode를 지정해야 초기 로드가 실행됩니다.
+  displayMode: 'infinite',
   infiniteScroll: {
     mode: 'server',
     initialLoadSize: 50,
@@ -630,6 +640,7 @@ grid.goToPage(3);`,
           { id: 'score', field: 'score', header: 'Score', width: 100, type: 'number' },
         ],
         rowKey: 'id',
+        displayMode: 'infinite',
         infiniteScroll: {
           mode: 'server',
           initialLoadSize: 50,
@@ -920,6 +931,85 @@ const grid = createGrid(el, {
   },
 
   {
+    id: 'formula-plugin',
+    category: 'Enterprise',
+    label: 'Cell Formulas',
+    desc: 'createFormulaPlugin으로 셀 수식(사칙연산, IF, 셀 참조)을 계산합니다. Qty/Unit Price를 더블클릭해 직접 수정해보세요.',
+    code: `import { createGrid, createFormulaPlugin } from 'zenith-grid';
+
+// 컬럼 순서가 곧 수식의 열 문자(A, B, C...)입니다.
+const columns = [
+  { id: 'item',      field: 'item',      header: 'Item',       flex: 1 },       // A
+  { id: 'qty',       field: 'qty',       header: 'Qty',        width: 80,  type: 'number', editable: true },  // B
+  { id: 'unitPrice', field: 'unitPrice', header: 'Unit Price', width: 110, type: 'number', editable: true },  // C
+  { id: 'total',     field: 'total',     header: 'Total',      width: 110, type: 'number' },  // D (수식, 읽기 전용)
+  { id: 'tier',      field: 'tier',      header: 'Tier',       width: 90 },      // E (수식, 읽기 전용)
+];
+
+const rows = myItems.map((item, i) => {
+  const n = i + 1; // 1-based row number, A1 표기와 동일
+  return {
+    ...item,
+    // 필드 값을 '='로 시작하는 문자열로 주면 자동으로 수식 셀이 됩니다.
+    // 기본 엔진은 =SUM/=AVG/단일 셀 참조만 이해하지만, 플러그인을 설치하면
+    // 사칙연산·IF·VLOOKUP 등 전체 수식을 그대로 쓸 수 있습니다.
+    total: \`=B\${n}*C\${n}\`,
+    tier: \`=IF(D\${n}>=500,"HIGH",IF(D\${n}>=200,"MID","LOW"))\`,
+  };
+});
+
+const grid = createGrid(el, {
+  columns,
+  rows,
+  rowKey: 'id',
+  editing: { enabled: true },
+  plugins: [{ plugin: createFormulaPlugin() }],
+});`,
+    setup(el) {
+      const items = [
+        { id: 1, item: 'Keyboard',    qty: 12, unitPrice: 45 },
+        { id: 2, item: 'Monitor',     qty: 4,  unitPrice: 220 },
+        { id: 3, item: 'Mouse',       qty: 30, unitPrice: 15 },
+        { id: 4, item: 'Dock',        qty: 6,  unitPrice: 90 },
+        { id: 5, item: 'Webcam',      qty: 10, unitPrice: 55 },
+        { id: 6, item: 'Headset',     qty: 8,  unitPrice: 60 },
+        { id: 7, item: 'USB Hub',     qty: 20, unitPrice: 12 },
+        { id: 8, item: 'Laptop Stand',qty: 5,  unitPrice: 40 },
+      ];
+
+      const rows = items.map((item, i) => {
+        const n = i + 1;
+        return {
+          ...item,
+          total: `=B${n}*C${n}`,
+          tier: `=IF(D${n}>=500,"HIGH",IF(D${n}>=200,"MID","LOW"))`,
+        };
+      });
+
+      return createGrid(el, {
+        columns: [
+          { id: 'item',      field: 'item',      header: 'Item',       flex: 1 },
+          { id: 'qty',       field: 'qty',       header: 'Qty',        width: 80,  type: 'number', editable: true },
+          { id: 'unitPrice', field: 'unitPrice', header: 'Unit Price', width: 110, type: 'number', editable: true },
+          { id: 'total',     field: 'total',     header: 'Total',      width: 110, type: 'number' },
+          {
+            id: 'tier', field: 'tier', header: 'Tier', width: 90,
+            conditionalFormat: (value) => {
+              if (value === 'HIGH') return { style: { color: '#34d399', fontWeight: 'bold' } };
+              if (value === 'LOW') return { style: { color: '#f87171' } };
+              return null;
+            },
+          },
+        ],
+        rows,
+        rowKey: 'id',
+        editing: { enabled: true },
+        plugins: [{ plugin: createFormulaPlugin() }],
+      });
+    },
+  },
+
+  {
     id: 'context-menu',
     category: 'Enterprise',
     label: 'Context Menu',
@@ -944,7 +1034,7 @@ const grid = createGrid(el, {
               {
                 label: 'Filter by Team',
                 action: () => core.setColumnFilter('team', {
-                  type: 'select', values: [row.team],
+                  type: 'select', value: [row.team],
                 }),
               },
             ];
@@ -974,7 +1064,7 @@ const grid = createGrid(el, {
                 }},
                 { type: 'separator' },
                 { label: `Filter: Team = ${row.team}`, action: () => {
-                  core.setColumnFilter?.('team', { type: 'select', values: [row.team] });
+                  core.setColumnFilter?.('team', { type: 'select', value: [row.team] });
                 }},
               ];
               if (type === 'header' && column) return [

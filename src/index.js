@@ -27,8 +27,8 @@ export {
   createSparklinePlugin,
   createFormulaPlugin,
 } from './plugins/index.js';
-// ECharts 플러그인: echarts 패키지 필요 → 별도 import 사용
-// import { createEchartsPlugin } from 'zenith-grid/src/plugins/echartsPlugin.js';
+// ECharts 플러그인: echarts 패키지 필요 → 별도 subpath에서 import
+// import { createEchartsPlugin } from 'zenith-grid/plugins/echarts';
 
 // New managers (for advanced use)
 export { UndoRedoManager } from './managers/UndoRedoManager.js';

@@ -1,6 +1,6 @@
 {
   "name": "zenith-grid",
-  "version": "3.0.2",
+  "version": "3.0.3",
   "description": "Production-ready data grid library in vanilla JavaScript",
   "main": "dist/zenith-grid.umd.cjs",
   "module": "dist/zenith-grid.js",
@@ -9,6 +9,8 @@
   "files": [
     "dist",
     "src/styles",
+    "src/plugins/echartsPlugin.js",
+    "src/plugins/echartsPlugin.d.ts",
     "index.d.ts"
   ],
   "exports": {
@@ -38,7 +40,11 @@
     "./styles/grid.css": "./src/styles/grid.css",
     "./styles/tokens.css": "./src/styles/tokens.css",
     "./src/styles/grid.css": "./src/styles/grid.css",
-    "./src/styles/tokens.css": "./src/styles/tokens.css"
+    "./src/styles/tokens.css": "./src/styles/tokens.css",
+    "./plugins/echarts": {
+      "types": "./src/plugins/echartsPlugin.d.ts",
+      "default": "./src/plugins/echartsPlugin.js"
+    }
   },
   "scripts": {
     "dev": "vite examples",
@@ -59,7 +65,8 @@
   "peerDependencies": {
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
-    "vue": "~2.7.10 || ^3.3.0"
+    "vue": "~2.7.10 || ^3.3.0",
+    "echarts": "^6.0.0"
   },
   "peerDependenciesMeta": {
     "vue": {
@@ -69,6 +76,9 @@
       "optional": true
     },
     "react-dom": {
+      "optional": true
+    },
+    "echarts": {
       "optional": true
     }
   },

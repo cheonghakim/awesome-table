@@ -206,6 +206,13 @@ export class FilterManager {
     return this._quickFilter.length > 0 || this._columnFilters.size > 0;
   }
 
+  // 커스텀 필터 함수는 Worker로 직렬화할 수 없다 — 이게 있으면 Worker에 위임하지 말고
+  // 메인 스레드에서 filter()를 직접 돌려야 한다 (Worker는 'custom' 타입을 모르는 채
+  // 조용히 통과시켜버려서 다른 결과를 낸다).
+  hasUnserializableFilter() {
+    return [...this._columnFilters.values()].some((def) => def.type === 'custom' && typeof def.fn === 'function');
+  }
+
   getColumnFilter(colId) {
     return this._columnFilters.get(colId) ?? null;
   }

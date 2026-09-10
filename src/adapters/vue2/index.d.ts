@@ -1,10 +1,10 @@
 import { DefineComponent } from 'vue';
-import type { GridInstance, GridOptions } from '../../index.js';
+import type { GridCore, GridOptions } from '../../index.js';
 
 export interface ZenithGridProps extends Omit<GridOptions, 'container'> {}
 
 export interface ZenithGridEmits {
-  (e: 'ready', grid: GridInstance): void;
+  (e: 'ready', grid: GridCore): void;
   (e: 'row-click', payload: any): void;
   (e: 'cell-click', payload: any): void;
   (e: 'cell-dblclick', payload: any): void;
@@ -23,8 +23,11 @@ export interface ZenithGridEmits {
   (e: 'state-change', payload: any): void;
 }
 
-export interface ZenithGridMethods extends Omit<GridInstance, 'on' | 'destroy'> {
-  grid: GridInstance | null;
+export interface ZenithGridMethods extends Omit<GridCore, 'on' | 'destroy'> {
+  grid: GridCore | null;
+  // Vue2's DefineComponent requires its methods type param to satisfy MethodOptions,
+  // which needs a string index signature.
+  [key: string]: any;
 }
 
 export const ZenithGrid: DefineComponent<ZenithGridProps, {}, {}, {}, ZenithGridMethods>;

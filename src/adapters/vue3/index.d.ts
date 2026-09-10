@@ -10,7 +10,7 @@ import type {
   GridPlugin,
   AdvancedFilterNode,
   PivotConfig,
-} from '../../../index.js';
+} from '../../index.js';
 
 // ── ZenithGrid component ───────────────────────────────────────────────────────
 
@@ -125,7 +125,7 @@ export interface ZenithGridExposed<Row = GridRow> {
   // Misc
   printGrid(): void;
   setLocale(locale: Record<string, any>): void;
-  usePlugin(plugin: GridPlugin<Row>, options?: Record<string, any>): void;
+  usePlugin(plugin: GridPlugin, options?: Record<string, any>): void;
   unusePlugin(pluginName: string): void;
   on(eventName: string, handler: (...args: any[]) => any): () => void;
 

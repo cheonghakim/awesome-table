@@ -25,10 +25,9 @@ const rows = Array.from({ length: 50 }, (_, i) => ({
 const shared = {
   columns,
   rows,
-  pagination: { enabled: true, pageSize: 15 },
-  selection: { mode: "single" },
-  sorting: { enabled: true },
-  filtering: { enabled: true },
+  displayMode: "paginated",
+  pagination: { pageSize: 15 },
+  selectionMode: "single",
 };
 
 createGrid(document.getElementById("grid-light"), shared);

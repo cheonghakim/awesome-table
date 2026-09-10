@@ -151,6 +151,13 @@ export class SortManager {
     return this._sortDefs.length > 0;
   }
 
+  // 커스텀 comparator는 Worker로 직렬화할 수 없다 — 이게 있으면 Worker에 위임하지 말고
+  // 메인 스레드에서 sort()를 직접 돌려야 한다 (Worker는 그냥 타입 기반 비교로
+  // 다른 결과를 내면서도 에러 없이 조용히 성공한다).
+  hasUnserializableSort() {
+    return this._sortDefs.some((s) => typeof s.comparator === 'function');
+  }
+
   getSortForField(field) {
     return this._sortDefs.find((s) => s.field === field) ?? null;
   }

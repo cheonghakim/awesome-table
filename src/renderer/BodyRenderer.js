@@ -1,5 +1,10 @@
 ﻿import { createSvgIcon } from "./IconFactory.js";
 
+function escapeAttrValue(value) {
+  if (typeof CSS !== "undefined" && CSS.escape) return CSS.escape(value);
+  return String(value).replace(/([!"#$%&'()*+,.\\/:;<=>?@[\]^`{|}~])/g, "\\$1");
+}
+
 export class BodyRenderer {
   constructor(domRenderer, columnModel, viewModel, options = {}) {
     this._dom = domRenderer;
@@ -53,6 +58,28 @@ export class BodyRenderer {
     const previousByKey = new Map(
       previousRows.map((entry) => [entry.key, entry]),
     );
+
+    // render() always tears down and rebuilds every row/cell element, which drops focus
+    // to <body> if the focused cell (or its active cell editor) was inside this container.
+    // This can happen mid-edit too: committing via Enter triggers this same async render
+    // before the cell editor's own DOM is torn down, so the focused element at that point
+    // is the <input> editor itself, not the cell wrapper div. A keyboard shortcut like
+    // Ctrl+Z is bound on the grid root, so once focus falls outside it (down to <body>),
+    // the shortcut silently stops reaching the grid until the user clicks back in.
+    // Capture which cell had (or contained) focus so it can be re-focused after rebuild.
+    const activeElement = document.activeElement;
+    let focusToRestore = null;
+    if (activeElement instanceof HTMLElement && container.contains(activeElement)) {
+      const focusableCell = activeElement.closest('[data-grid-focusable="cell"]');
+      if (focusableCell instanceof HTMLElement) {
+        // The row-selection checkbox cell is focusable too but carries no data-col-id
+        // (there's only one per row), so it needs its own class-based selector instead.
+        focusToRestore = focusableCell.classList.contains('ck-zenith-grid-selection-cell')
+          ? { rowKey: focusableCell.closest('[data-row-key]')?.dataset.rowKey, selectionCell: true }
+          : { rowKey: focusableCell.closest('[data-row-key]')?.dataset.rowKey, colId: focusableCell.dataset.colId };
+      }
+    }
+
     container.innerHTML = "";
 
     const visibleColumns = this._columnModel.getVisibleLeafColumns();
@@ -364,6 +391,18 @@ export class BodyRenderer {
         ghost.remove();
       }
     });
+
+    if (focusToRestore?.rowKey != null && focusToRestore?.selectionCell) {
+      const newCell = container.querySelector(
+        `[data-row-key="${escapeAttrValue(focusToRestore.rowKey)}"] [data-grid-focusable="cell"].ck-zenith-grid-selection-cell`,
+      );
+      if (newCell instanceof HTMLElement) newCell.focus();
+    } else if (focusToRestore?.rowKey != null && focusToRestore?.colId != null) {
+      const newCell = container.querySelector(
+        `[data-row-key="${escapeAttrValue(focusToRestore.rowKey)}"] [data-grid-focusable="cell"][data-col-id="${escapeAttrValue(focusToRestore.colId)}"]`,
+      );
+      if (newCell instanceof HTMLElement) newCell.focus();
+    }
 
     this._lastRenderAt = now;
   }
@@ -830,6 +869,9 @@ export class BodyRenderer {
       } else {
         const spacer = document.createElement("span");
         spacer.className = "ck-zenith-grid-row-toggle ck-zenith-grid-row-toggle-spacer";
+        if (this._options.isTreeLeafSpacerVisible?.()) {
+          spacer.classList.add("ck-zenith-grid-row-toggle-spacer-visible");
+        }
         cell.appendChild(spacer);
       }
     }

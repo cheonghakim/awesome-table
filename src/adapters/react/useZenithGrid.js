@@ -32,13 +32,16 @@ export function useZenithGrid(options = {}) {
     const grid = createGrid(containerRef.current, optionsRef.current);
     gridRef.current = grid;
 
-    grid.on('selection-change', (p) => {
+    grid.on('selection-change', () => {
+      // selection-change's own payload doesn't carry allSelected/someSelected (they need
+      // scope-row context only SelectionManager has) — getSelectionState() is authoritative.
+      const sel = grid.getSelectionState();
       setState((prev) => ({
         ...prev,
-        selectedKeys: p.selectedKeys ?? new Set(),
-        selectionCount: p.count ?? 0,
-        isAllSelected: p.isAll ?? false,
-        isSomeSelected: p.isSome ?? false,
+        selectedKeys: sel.selectedKeys,
+        selectionCount: sel.selectedCount,
+        isAllSelected: sel.allSelected,
+        isSomeSelected: sel.someSelected,
       }));
     });
 
@@ -46,9 +49,16 @@ export function useZenithGrid(options = {}) {
       setState((prev) => ({
         ...prev,
         renderInfo: p,
-        paginationState: p.paginationState ?? prev.paginationState,
       }));
     });
+
+    // 'render' doesn't carry pagination state — refresh it explicitly whenever pagination
+    // actually changes, plus once up front so it isn't stuck at null before the first change.
+    grid.on('state-change', ({ type }) => {
+      if (type !== 'pagination') return;
+      setState((prev) => ({ ...prev, paginationState: grid.getPaginationState() }));
+    });
+    setState((prev) => ({ ...prev, paginationState: grid.getPaginationState() }));
 
     setIsReady(true);
 

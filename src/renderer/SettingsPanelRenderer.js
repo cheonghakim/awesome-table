@@ -75,6 +75,7 @@ export class SettingsPanelRenderer {
 
     this._shell.innerHTML = '';
     this._shell.dataset.open = this._open ? 'true' : 'false';
+    this._dom.getRoot()?.classList.toggle('ck-zenith-grid-side-panel-open', this._open);
 
     const rail = document.createElement('div');
     rail.className = 'ck-zenith-grid-side-panel-rail';
@@ -933,6 +934,37 @@ export class SettingsPanelRenderer {
     treeRow.appendChild(treeToggle);
     section.appendChild(treeRow);
 
+    if (tree.enabled) {
+      const leafSpacerRow = document.createElement('div');
+      leafSpacerRow.className = 'ck-zenith-grid-side-panel-row';
+
+      const leafSpacerCopy = document.createElement('div');
+      leafSpacerCopy.className = 'ck-zenith-grid-side-panel-copy';
+      const leafSpacerTitle = document.createElement('strong');
+      leafSpacerTitle.textContent = this._t('sidePanel.treeLeafSpacer', 'Leaf Row Placeholder');
+      const leafSpacerMeta = document.createElement('span');
+      leafSpacerMeta.textContent = this._core.isTreeLeafSpacerVisible()
+        ? this._t('sidePanel.visible', 'Visible')
+        : this._t('sidePanel.hidden', 'Hidden');
+      leafSpacerCopy.appendChild(leafSpacerTitle);
+      leafSpacerCopy.appendChild(leafSpacerMeta);
+
+      const leafSpacerToggle = document.createElement('button');
+      leafSpacerToggle.type = 'button';
+      leafSpacerToggle.className = 'ck-zenith-grid-side-panel-toggle';
+      leafSpacerToggle.dataset.active = this._core.isTreeLeafSpacerVisible() ? 'true' : 'false';
+      leafSpacerToggle.textContent = this._core.isTreeLeafSpacerVisible()
+        ? this._t('sidePanel.on', 'On')
+        : this._t('sidePanel.off', 'Off');
+      leafSpacerToggle.addEventListener('click', () => {
+        this._core.setTreeLeafSpacerVisible(!this._core.isTreeLeafSpacerVisible());
+      });
+
+      leafSpacerRow.appendChild(leafSpacerCopy);
+      leafSpacerRow.appendChild(leafSpacerToggle);
+      section.appendChild(leafSpacerRow);
+    }
+
     const variableRow = document.createElement('div');
     variableRow.className = 'ck-zenith-grid-side-panel-row';
 
@@ -995,7 +1027,7 @@ export class SettingsPanelRenderer {
   }
 
   destroy() {
-    this._dom.getRoot()?.classList.remove('ck-zenith-grid-has-side-panel');
+    this._dom.getRoot()?.classList.remove('ck-zenith-grid-has-side-panel', 'ck-zenith-grid-side-panel-open');
     if (this._host) {
       this._host.innerHTML = '';
     }

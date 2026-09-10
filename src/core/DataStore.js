@@ -35,6 +35,10 @@ export class DataStore {
 
   getRowKey(row) {
     if (typeof this._rowKeyField === 'function') {
+      // NOTE: called with only `row` here, unlike Pipeline/TreeManager which call the same
+      // user function as `(row, index)`. A custom rowKey function that relies on `index`
+      // will see it as undefined in this call, so it can resolve to a different key here
+      // than in Pipeline/TreeManager — pre-existing inconsistency, not fixed yet.
       return String(this._rowKeyField(row));
     }
     const key = row[this._rowKeyField];
@@ -170,9 +174,24 @@ export class DataStore {
       console.warn(`[DataStore] patchRow: rowKey "${strKey}" not found.`);
       return false;
     }
-    this._rows[idx] = { ...this._rows[idx], ...patch };
-    this._changedKeys.add(strKey);
-    this._onChanged({ type: 'patch', affectedKeys: [strKey] });
+    const updated = { ...this._rows[idx], ...patch };
+    // patch가 rowKey 필드 자체를 바꾸는 경우, 그 새 키가 이미 다른 행이 쓰고 있는지
+    // 먼저 확인한다 — 확인 없이 진행하면 두 행이 같은 키를 갖게 되어 인덱스가
+    // 한쪽을 덮어쓰고 그 행은 getByKey로 더 이상 찾을 수 없게 된다.
+    const newKey = this.getRowKey(updated);
+    if (newKey !== strKey && this._indexMap.has(newKey)) {
+      console.warn(`[DataStore] patchRow: cannot change rowKey "${strKey}" to "${newKey}" — that key is already used by another row.`);
+      return false;
+    }
+    this._rows[idx] = updated;
+    if (newKey !== strKey) {
+      this._indexMap.delete(strKey);
+      this._indexMap.set(newKey, idx);
+    }
+    // Only the row's CURRENT key belongs in _changedKeys — if it was renamed, the old key
+    // no longer resolves via getByKey(), so leaving it here would hand callers a dangling key.
+    this._changedKeys.add(newKey);
+    this._onChanged({ type: 'patch', affectedKeys: newKey === strKey ? [strKey] : [strKey, newKey] });
     return true;
   }
 
@@ -187,9 +206,22 @@ export class DataStore {
       const strKey = String(key);
       const idx = this._indexMap.get(strKey);
       if (idx === undefined) continue;
-      this._rows[idx] = { ...this._rows[idx], ...patch };
-      this._changedKeys.add(strKey);
+      const updated = { ...this._rows[idx], ...patch };
+      const newKey = this.getRowKey(updated);
+      if (newKey !== strKey && this._indexMap.has(newKey)) {
+        console.warn(`[DataStore] patchRows: cannot change rowKey "${strKey}" to "${newKey}" — that key is already used by another row.`);
+        continue;
+      }
+      this._rows[idx] = updated;
+      if (newKey !== strKey) {
+        this._indexMap.delete(strKey);
+        this._indexMap.set(newKey, idx);
+      }
+      this._changedKeys.add(newKey);
       affectedKeys.push(strKey);
+      if (newKey !== strKey) {
+        affectedKeys.push(newKey);
+      }
     }
     if (affectedKeys.length > 0) {
       this._onChanged({ type: 'patch', affectedKeys });
