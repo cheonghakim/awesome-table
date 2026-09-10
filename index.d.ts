@@ -409,7 +409,10 @@ export declare class GridCore<Row = GridRow> {
   setLiveRowAnimationEnabled(enabled: boolean): void;
   isLiveRowAnimationEnabled(): boolean;
   setLocale(locale: Record<string, any>): void;
+  getLocaleText(key: string, fallback: string, params?: Record<string, any>): string;
   beginCellEdit(rowKey: GridKey, colId: string, options?: { cell?: HTMLElement }): boolean;
+  commitCellEdit(rowKey: GridKey, colId: string, value: any): void;
+  cancelCellEdit(): void;
   setCellValue(rowKey: GridKey, colId: string, rawValue: any): boolean;
   validateRows(rows?: Row[]): Array<{ rowKey: string; colId: string; message: string }>;
   getValidationErrors(): Array<{ rowKey: string; colId: string; message: string }>;

@@ -49,6 +49,16 @@
 - Fixed a duplicate `onRowContextMenu` property and a non-generic `GridPlugin` type misuse in the Vue 3 declarations.
 - `createEchartsPlugin` can now actually be imported from the published package, via `zenith-grid/plugins/echarts`, with its own type declarations.
 
+## [3.0.4] - 2026-09-10
+
+### Fixed
+
+**Layout**
+- Flex (`flex: N`) columns no longer overflow into an unwanted horizontal scrollbar. `_calculateFlexColumnWidths()` was sizing columns against the full grid root width instead of the actual row viewport width — it now accounts for both the open side panel's reserved margin and the row-selection checkbox column (a 44/68px synthetic column that isn't part of the column registry).
+
+**Packaging & TypeScript types**
+- Added missing `GridCore` type declarations for `getLocaleText()`, `commitCellEdit()`, and `cancelCellEdit()`, which existed at runtime but weren't declared in `index.d.ts`.
+
 ## [3.0.0] - 2026-07-14
 
 ### ⚠️ BREAKING CHANGES

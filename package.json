@@ -1,6 +1,6 @@
 {
   "name": "zenith-grid",
-  "version": "3.0.3",
+  "version": "3.0.4",
   "description": "Production-ready data grid library in vanilla JavaScript",
   "main": "dist/zenith-grid.umd.cjs",
   "module": "dist/zenith-grid.js",

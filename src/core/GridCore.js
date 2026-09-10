@@ -1951,12 +1951,21 @@ export class GridCore {
    * @private
    */
   _calculateFlexColumnWidths() {
-    const containerWidth = this._container?.clientWidth ?? 0;
+    // this._container is the outer .ck-zenith-grid-root element, which never shrinks for
+    // the side panel — only its children (including the body viewport) get the
+    // margin-right reservation for the panel rail (see .ck-zenith-grid-has-side-panel in
+    // grid.css). Using the container's width here overcounts by that reserved margin,
+    // so flex columns end up exactly that much too wide and force a horizontal scrollbar.
+    const containerWidth = this._dom?.getBodyViewport()?.clientWidth ?? this._container?.clientWidth ?? 0;
     if (containerWidth === 0) return;
 
-    // 핀 고정된 컬럼의 너비를 제외한 center 영역 너비 계산
+    // 핀 고정된 컬럼과 선택 체크박스 컬럼(ColumnRegistry에 등록되지 않는 합성 컬럼 —
+    // _syncColumnWidths()의 leftWidth 계산과 동일하게 반영해야 한다)의 너비를 제외한
+    // center 영역 너비 계산
     const pinnedWidths = this._columns.getPinnedWidths();
-    const centerAvailableWidth = containerWidth - pinnedWidths.leftWidth - pinnedWidths.rightWidth;
+    const selectionWidth = (this._options.selectable === false || this._pivotManager.isEnabled()) ? 0
+      : (this._masterDetailRenderer ? 68 : 44);
+    const centerAvailableWidth = containerWidth - selectionWidth - pinnedWidths.leftWidth - pinnedWidths.rightWidth;
 
     // Center 컬럼들의 flex 계산
     const centerColumns = this._columns.getColumnsByPin().center;
